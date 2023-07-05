@@ -20,30 +20,6 @@ function error(...msg) {
   console.log('ERR::' + prog, ...msg);
 }
 
-function scrapeDescription(x) {
-  if (x == undefined) { return undefined; }
-  var ret = (x.type === 'text/plain') ? x.content : undefined;
-  return ret;
-}
-
-function convertToJson(body) {
-  // wrapped conversion, not every request/response contains well formed json
-  try {
-    return JSON.parse(body)
-  }
-  catch (e) {
-    return body ? body : '';
-  }
-}
-
-function compactHeaders(allHeaders) {
-  var h = {};
-  allHeaders.members.forEach(function (x) {
-    h[x.key] = x.value;
-  });
-  return h;
-}
-
 function formatTimestamp(timestamp) {
   const date = new Date(timestamp);
   const offset = date.getTimezoneOffset() * -1;
@@ -55,60 +31,97 @@ function formatTimestamp(timestamp) {
 }
 
 function createLightSummary(rawDetail, options) {
-  let detail = {};
-  Object.assign(detail, {
-    'name': rawDetail.collection.name,
-    'description': scrapeDescription(rawDetail.collection.description),
-    'env': rawDetail.environment.name,
-    'duration': rawDetail.run.timings.completed - rawDetail.run.timings.started,
-    'started': rawDetail.run.timings.started,
-    "startDate": `${formatTimestamp(rawDetail.run.timings.started)}`,
-    "finishDate": `${formatTimestamp(rawDetail.run.timings.completed)}`,
-  });
+  if (options.xrayJsonProjectKey == undefined){
+    throw new Error('Project Key is not provided')
+  }
+
+  if (options.xrayJsonTestExecutionKey == undefined) {
+    throw new Error('Test Execution Key is not Provided.')
+  }
 
   let steps = [];
+  let test_steps = {};
   rawDetail.run.executions.forEach(function (exec) {
     let test_status = 'PASSED';
-    let failed_details = [];
+    let test_failed_details = [];
     if (exec.assertions !== undefined) {
       exec.assertions.forEach(function (assertionReport) {
         if (assertionReport.error) {
           test_status = 'FAILED';
-          failed_details.push(`${exec.item.name} - Assertion - ${assertionReport.assertion} FAILED. Detail - ${assertionReport.error.message}`);
+          test_failed_details.push(`${exec.item.name} - Assertion - ${assertionReport.assertion} FAILED. Detail - ${assertionReport.error.message}`);
         }
       });
     }
-    let step = {};
     if (exec.requestError) {
       test_status = 'FAILED';
-      failed_details.push(`${exec.item.name} Request Error - ${exec.requestError}`);
+      test_failed_details.push(`${exec.item.name} Request Error - ${exec.requestError}`);
     }
-    let test_comments = (failed_details.length > 0) ? failed_details.join('\n') : '';
+    let test_comments = (test_failed_details.length > 0) ? test_failed_details.join('\n') : '';
+
+    let test_key = exec.item.name.match(/\[(.+?)\]/);
+    if (test_key == undefined || test_key == null || test_key.length < 2) {
+      throw new Error('Test key tag not found');
+    }
+
+    test_key = test_key[1];
+    if (test_key.startsWith(options.xrayJsonProjectKey) == false) {
+      throw new Error('Test key is invalid.')
+    }
+    if (test_steps[test_key] == undefined) {
+      test_steps[test_key] = {
+        'status': 'PASSED',
+        'comments': [],
+        'response_time': 0
+      }
+    }
+    if (test_comments != '') {
+      test_steps[test_key].comments.push(test_comments)
+    }
+    if (test_steps[test_key].status == 'FAILED' || test_status == 'FAILED'){
+      test_steps[test_key].status = 'FAILED';
+    }
+    if (exec.response.responseTime) {
+      test_steps[test_key].response_time += (exec.response.responseTime / 1000) || 0;
+    }
+  });
+
+  Object.keys(test_steps).forEach(function(step) {
     var currentTimestamp = Date.now();
-    console.log(currentTimestamp);
-
-    Object.assign(step, {
-      'testKey': exec.item.name.split(' ')[0],
-      'comments': test_comments,
-      'status': test_status,
+    steps.push({
+      'testKey': step,
+      'comments': test_steps[step].comments.join('\n'),
+      'status': test_steps[step].status,
       'start': `${formatTimestamp(currentTimestamp)}`,
-    });
-    // console.log(exec.response);
-    steps.push(step);
-  });
+      'finish': `${formatTimestamp(currentTimestamp + Math.round(test_steps[step].response_time))}`,
+      "executedBy": "",
+      "assignee": "",
+      "defects": [],
+      "evidence": [],
+      "customFields": [],
+    })
+  })
 
-  var ret = {};
-  Object.assign(ret, {
-    'info': detail,
+  let xray_json = {
+    "testExecutionKey": options.xrayJsonTestExecutionKey,
+    'info': {
+      'project': options.xrayJsonProjectKey,
+      "summary": "Execution of automated tests",
+      "description": "This execution is automatically created when importing execution results from Gitlab",
+      "version": "",
+      "revision": "",
+      "startDate": `${formatTimestamp(rawDetail.run.timings.started)}`,
+      "finishDate": `${formatTimestamp(rawDetail.run.timings.completed)}`,
+      "testPlanKey": "",
+      "testEnvironments": []
+    },
     'tests': steps,
-  });
-  console.log(ret);
-  return ret;
+  }
+
+  return xray_json;
 }
 
 module.exports = function (newman, options) {
   newman.on('beforeDone', function (err, o) {
-    // info(options);
     if (err) {
       info('stops on error:', err);
       return;
@@ -124,6 +137,5 @@ module.exports = function (newman, options) {
     catch (e) {
       error(e);
     }
-    // info('finished');
   });
 };
