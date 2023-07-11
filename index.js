@@ -190,7 +190,7 @@ function createXraySummary(rawDetail, options){
     var currentTimestamp = Date.now();
     steps.push({
       'testKey': step,
-      'comments': test_steps[step].comments.join('\n'),
+      'comment': test_steps[step].comments.join('\n'),
       'status': test_steps[step].status,
       'start': `${formatTimestamp(currentTimestamp)}`,
       'finish': `${formatTimestamp(currentTimestamp + Math.round(test_steps[step].response_time))}`,
@@ -204,17 +204,6 @@ function createXraySummary(rawDetail, options){
 
   let xray_json = {
     "testExecutionKey": options.xrayTestExecutionKey,
-    'info': {
-      'project': options.xrayProjectKey,
-      "summary": "Execution of automated tests",
-      "description": "This execution is automatically created when importing execution results from Gitlab",
-      "version": "",
-      "revision": "",
-      "startDate": `${formatTimestamp(rawDetail.run.timings.started)}`,
-      "finishDate": `${formatTimestamp(rawDetail.run.timings.completed)}`,
-      "testPlanKey": "",
-      "testEnvironments": []
-    },
     'tests': steps,
   }
 
