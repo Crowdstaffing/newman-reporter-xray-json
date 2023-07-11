@@ -153,6 +153,9 @@ function createXraySummary(rawDetail, options){
         }
       });
     }
+    else {
+      return;
+    }
     if (exec.requestError) {
       test_status = 'FAILED';
       test_failed_details.push(`${exec.item.name} Request Error - ${exec.requestError}`);
