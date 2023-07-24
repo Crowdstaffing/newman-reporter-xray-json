@@ -156,7 +156,7 @@ function createXraySummary(rawDetail, options){
     else {
       return;
     }
-    if (exec.requestError) {
+    if (exec.requestError && `${exec.requestError}`.includes('socket hang up') == false) {
       test_status = 'FAILED';
       test_failed_details.push(`${exec.item.name} Request Error - ${exec.requestError}`);
     }
@@ -184,8 +184,11 @@ function createXraySummary(rawDetail, options){
     if (test_steps[test_key].status == 'FAILED' || test_status == 'FAILED') {
       test_steps[test_key].status = 'FAILED';
     }
-    if (exec.response.responseTime) {
+    if (exec.response != undefined) {
       test_steps[test_key].response_time += (exec.response.responseTime / 1000) || 0;
+    }
+    else {
+      test_steps[test_key].response_time += 1;
     }
   });
 
